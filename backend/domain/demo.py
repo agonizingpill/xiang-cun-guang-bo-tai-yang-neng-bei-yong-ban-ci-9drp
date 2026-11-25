@@ -1,5 +1,6 @@
 from domain.airslots_model import airslots
 from domain.battery_logs_model import battery_logs
+from domain.prepcards_model import prepcards
 from domain.reserves_model import reserves
 from domain.switchcards_model import switchcards
 
@@ -305,4 +306,14 @@ FIXTURES = [
   'source': '台外校时',
   'approved_wh': 115,
   'state': '值守签发'}]),
+    (prepcards, [{'code': 'PC-SEED',
+  'airslot': 'AIR-08',
+  'meter': 'BAT-04',
+  'token': 'PC-SEED-TOKEN',
+  'clear_wh': 132.5,
+  'cloudy_wh': 118.0,
+  'state': '待领用',
+  'receipt': None,
+  'claimed_weather': None,
+  'claimed_wh': None}]),
 ]

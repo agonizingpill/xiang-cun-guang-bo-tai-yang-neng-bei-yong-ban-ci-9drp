@@ -10,6 +10,15 @@
 - 蓄电班记与测量 `battery_logs`，字段为 `meter`（电表编号）、`hour`（两日内整点）、`load_wh`（用量 Wh）、`clear`（天空晴）、`verified`（抄表审核）。模型约束位于 `backend/domain/battery_logs_model.py`，规则位于 `battery_logs_service.py`。
 - 备用分钟核算 `reserves`，字段为 `airslot`（节目时段）、`plan_wh`（计划备用 Wh）、`fallback`（备用源优先级）、`mae`（时间验证MAE Wh）、`token`（计算号）。模型约束位于 `backend/domain/reserves_model.py`，规则位于 `reserves_service.py`。
 - 班组备播卡 `switchcards`，字段为 `reserve`（备用评估）、`source`（实际时钟源）、`approved_wh`（锁定备用 Wh）、`state`（状态）。模型约束位于 `backend/domain/switchcards_model.py`，规则位于 `switchcards_service.py`。
+- 晴阴备播卡 `prepcards`，字段为 `airslot`（节目时段）、`meter`（电表）、`clear_wh`（晴天需电 Wh）、`cloudy_wh`（阴天需电 Wh）、`state`（状态）、`receipt`（领用凭据）、`claimed_weather`（已领档位）、`claimed_wh`（领卡电量）。模型约束位于 `backend/domain/prepcards_model.py`，规则位于 `prepcards_service.py`。
+
+### 晴阴备播卡规则
+
+1. 同一批审签读数只拟合一个 Fourier+OLS 模型，分别按晴天、阴天做点预测。
+2. 每档余量取留出段（末 6 小时）同天气样本中少算最多的电量，即 `max(实际 - 预测, 0)`；该天气在留出段没有样本时对应需电量为空（`null`），不发这一档。
+3. 只够一种天气也可以发卡；开播领用时只接受现场天气那一档，空档位提交会被拒绝。
+4. 两人同时提交不同天气/凭据时，行锁内认先领成的那份，后来者收到 409。
+5. 同一笔领用在断线后带原凭据重试，直接返回原卡、不重复领卡（凭据幂等）。
 
 团队为模拟的6 人广播合作社值守组，负责两个电源档位的备播。
 
@@ -55,8 +64,9 @@ Compose 运行 Nginx、Python FastAPI、独立 Redis 消费进程、SQL 数据�
 | 蓄电班记与测量 | `/battery_logs` /battery_logs/log-charge，/battery_logs/approve-meter | `frontend/src/pages/battery_logs.js` |
 | 备用分钟核算 | `/reserves` /reserves/forecast-wh，/reserves/save-reserve | `frontend/src/pages/reserves.js` |
 | 班组备播卡 | `/switchcards` /switchcards/issue-switch，/switchcards/handover | `frontend/src/pages/switchcards.js` |
+| 晴阴备播卡 | `/prepcards` /prepcards/prepare，/prepcards/issue，/prepcards/claim | `frontend/src/pages/prepcards.js` |
 
-SQL 实体与约束在 `backend/domain` 下维护。前端使用原生 ES modules。核心算子为 Fourier 基 + OLS。OLS 在训练时段拟合一、二阶谐波和晴天标记。备用量为截零后的点预测加末 6 小时 MAE。
+SQL 实体与约束在 `backend/domain` 下维护。前端使用原生 ES modules。核心算子为 Fourier 基 + OLS。OLS 在训练时段拟合一、二阶谐波和晴天标记。备用量为截零后的点预测加末 6 小时 MAE；晴阴备播卡复用同一模型做两档点预测，余量改为留出段同天气下的最大欠发电量，无留出样本的天气不发卡。
 
 按模拟广播班记推演。卡片供人工值守查阅，应用只处理纸本条件的数字记录。
 
